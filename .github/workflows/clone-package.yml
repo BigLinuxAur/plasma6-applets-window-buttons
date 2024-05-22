@@ -1,0 +1,77 @@
+name: Clone Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        type: boolean
+        description: 'With TMATE'
+        required: false
+        default: false
+
+  repository_dispatch:
+    types:
+      - AUR/*
+      - clone
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install \
+          git \
+          wget
+
+      - name: Clone from Aur
+        if: ${{ ! inputs.debug_enabled }}
+        shell: bash
+        run: |
+          repo=$(cut -d "/" -f2 <<< ${{ github.repository }})
+          if [ -d "$repo" ];then
+            rm -rf $repo
+          fi
+          git clone https://aur.archlinux.org/$(cut -d "/" -f2 <<< $repo).git
+          ls
+          rm -rf $repo/.git
+
+      - name: Setup TMATE Session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+
+      # - name: fix PKGBUILD
+      #   shell: bash
+      #   run: |
+      #     gitfolder=$(find -type f -name PKGBUILD | sed 's/PKGBUILD//')
+      #     cd $gitfolder
+      #     if [ "" ]; then
+      #       
+      #     fi
+      #     sed -i "/\bdepends=/s/)/ \'xpto\')/" PKGBUILD
+      #     sed -i "/makedepends=/s/)/ \'xpto\')/" PKGBUILD
+      #     sed -i '/\bdepends=/!b; :a; n; a\    xpto' PKGBUILD
+
+      - name: Update github
+        shell: bash
+        run: |
+          git config --local user.email "gitbarnabedikartola@gmail.com"
+          git config --local user.name "gitbarnabedikartola"
+          git add -fv --al
+          if [ -n "$(git commit -m "update $(date +%y-%m-%d_%H:%M)" -a | grep "nothing to commit")" ];then echo "nothing to commit"; exit 0; fi
+
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          # github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref }}
+
+      - name: Trigger Build Workflow
+        uses: peter-evans/repository-dispatch@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: build
+          client-payload: '{"bigbranch": "${{ github.event.client_payload.branch }}" }'
